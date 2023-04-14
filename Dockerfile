@@ -11,9 +11,8 @@ COPY . /INVENAI
 RUN pip install --trusted-host pypi.python.org -r requirement.txt
 RUN pip install pandas
 
-
 # Make port 80 available to the world outside this container
-EXPOSE 80
+EXPOSE 8000
 
 # Run app.py when the container launches
 CMD ["python", "app.py"]
