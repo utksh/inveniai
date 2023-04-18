@@ -1,41 +1,65 @@
+import psycopg2
+import json
 import pika
 import requests
-import json
-import psycopg2
+# Connect to the PostgreSQL database
+conn = psycopg2.connect(
+    host="localhost",
+    database="mydatabase",
+    user="myusername",
+    password="mypassword"
+)
 
+# Define a cursor object to execute SQL queries
+cur = conn.cursor()
 
-connection = pika.BlockingConnection(pika.ConnectionParameters('localhost'))
+# Create a table for storing the inference results
+cur.execute("""
+    CREATE TABLE IF NOT EXISTS inference_results (
+        id SERIAL PRIMARY KEY,
+        patient_description TEXT,
+        disease_class TEXT,
+        predicted_class TEXT,
+        predicted_probability FLOAT
+    )
+""")
+
+# Define the RabbitMQ connection parameters
+credentials = pika.PlainCredentials('guest', 'guest')
+parameters = pika.ConnectionParameters('localhost', 5672, '/', credentials)
+
+# Connect to the RabbitMQ server
+connection = pika.BlockingConnection(parameters)
 channel = connection.channel()
 
-channel.queue_declare(queue='prediction_queue')
+# Declare the message queue
+channel.queue_declare(queue='inference_queue')
 
-conn = psycopg2.connect(host='localhost', dbname='health_conditions', user='postgres', password='password')
-
-
+# Define the callback function for consuming messages
 def callback(ch, method, properties, body):
-    # make an API call to the prediction endpoint
+    # Convert the JSON string to a Python dictionary
+    data = json.loads(body)
+
+    # Make an API call for model inference
     url = 'http://localhost:5000/predict'
     headers = {'Content-type': 'application/json'}
-    data = {'description': json.loads(body)['description']}
-    response = requests.post(url, json=data, headers=headers)
+    response = requests.post(url, headers=headers, json=data)
 
-   # get the prediction result
-    prediction = response.json()['prediction']
-    confidence = response.json()['confidence']
+    # Parse the model prediction
+    predicted_class = response.json()['predicted_class']
+    predicted_probability = response.json()['predicted_probability']
 
-    # insert the inference result into the database
-    cur = conn.cursor()
-    cur.execute("INSERT INTO inference_results (description, predicted_class, confidence) VALUES (%s, %s, %s)", (json.loads(body)['description'], prediction, confidence))
+    # Insert the inference results into the database
+    cur.execute("""
+        INSERT INTO inference_results (patient_description, disease_class, predicted_class, predicted_probability)
+        VALUES (%s, %s, %s, %s)
+    """, (data['patient_description'], data['disease_class'], predicted_class, predicted_probability))
     conn.commit()
 
-    # print the prediction result
-    print(prediction)
-
-
-    # acknowledge the message
-    ch.basic_ack(delivery_tag=method.delivery_tag)
-
-    channel.basic_qos(prefetch_count=1)
-channel.basic_consume(queue='prediction_queue', on_message_callback=callback)
-
+# Start consuming messages from the message queue
+channel.basic_consume(queue='inference_queue', on_message_callback=callback, auto_ack=True)
 channel.start_consuming()
+
+# Close the database connection
+cur.close()
+conn.close()
