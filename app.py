@@ -28,19 +28,18 @@ def create_features(df):
     # Create a feature for the number of unique words in the description
     df['unique_words'] = df['description'].apply(lambda x: len(set(x.split())))
     
-    # Load the spaCy English model
-    nlp = spacy.load("en_core_web_sm")
-    
-    # Define a function to count the number of adjectives in the description
-    def count_adjectives(text):
-        doc = nlp(text)
-        adjectives = [token for token in doc if token.pos_ == "ADJ"]
-        return len(adjectives)
-    
     # Create a feature for the number of adjectives in the description
     df['num_adjectives'] = df['description'].apply(count_adjectives)
     
     return df
+
+# Define a function to count the number of adjectives in the description
+def count_adjectives(text):
+    # Load the spaCy English model
+    nlp = spacy.load("en_core_web_sm")
+    doc = nlp(text)
+    adjectives = [token for token in doc if token.pos_ == "ADJ"]
+    return len(adjectives)
 
 # Apply the feature engineering function to the dataset
 df = create_features(df)
@@ -70,7 +69,7 @@ param_grid = {
 
 # Perform grid search to find the best hyperparameters
 grid_search = GridSearchCV(rfc, param_grid, cv=5, n_jobs=-1)
-grid_search.fit(X_train_final, y_train)
+rf = grid_search.fit(X_train_final, y_train)
 
 # Print the best hyperparameters found by grid search
 print("Best hyperparameters: ", grid_search.best_params_)
@@ -89,7 +88,7 @@ print("F1-score: ", f1_score(y_test, y_pred, average='weighted'))
 
 # save the trained model
 with open('trained_model.pkl', 'wb') as f:
-    pickle.dump(svm, f)
+    pickle.dump(rf, f)
 
 app = Flask(__name__)
 
@@ -97,74 +96,31 @@ app = Flask(__name__)
 def home():
     return "Hello, World!"
 
-def on_request(ch, method, props, body):
-    # load the saved model
-    with open('trained_model.pkl', 'rb') as f:
-        model = pickle.load(f)
-
-    # parse the message body
-    message = json.loads(body)
-    description = message['description']
-
-    # transform the description using the vectorizer
-    description_transformed = tfidf.transform([description])
-
-    # make a prediction using the loaded model
-    prediction = model.predict(description_transformed)[0]
-
-    # create a response message
-    response = {'prediction': prediction}
-
-    # send the response message back to the sender
-    ch.basic_publish(
-        exchange='',
-        routing_key=props.reply_to,
-        properties=pika.BasicProperties(
-            correlation_id=props.correlation_id
-        ),
-        body=json.dumps(response)
-    )
-
-    # acknowledge the message
-    ch.basic_ack(delivery_tag=method.delivery_tag)
-
-@app.route("/predict", methods=["POST"])
+# Define the route for the prediction endpoint
+@app.route('/predict', methods=['POST'])
 def predict():
-    # create a connection to the RabbitMQ server
-    connection = pika.BlockingConnection(pika.ConnectionParameters('localhost'))
-    channel = connection.channel()
+    # Get the input data from the request
+    input_data = request.json
+    
+    # Load the trained model
+    with open('rfc_model.pkl', 'rb') as f:
+        rfc_model = pickle.load(f)
+    
+    # Transform the input data using TF-IDF
+    input_tfidf = tfidf.transform([input_data['description']])
+    
+    # Create the additional features for the input data
+    input_features = [[len(input_data['description'].split()), len(set(input_data['description'].split())), count_adjectives(input_data['description'])]]
+    
+    # Concatenate the TF-IDF and additional features for the input data
+    input_final = pd.concat([pd.DataFrame(input_tfidf.toarray()), pd.DataFrame(input_features, columns=['desc_length', 'unique_words', 'num_adjectives'])], axis=1)
+    
+    # Predict the disease class using the trained model
+    prediction = rfc_model.predict(input_final)
+    
+    # Return the prediction as a JSON response
+    return jsonify({'prediction': prediction.tolist()})
 
-    # create a queue to receive messages
-    channel.queue_declare(queue='prediction_queue')
-
-    # generate a unique correlation ID
-    correlation_id = str(uuid.uuid4())
-
-    # create a message payload
-    payload = {'description': request.json['description']}
-
-    # send the message to the prediction queue
-    channel.basic_publish(
-        exchange='',
-        routing_key='prediction_queue',
-        properties=pika.BasicProperties(
-            reply_to='prediction_response',
-            correlation_id=correlation_id
-        ),
-        body=json.dumps(payload)
-    )
-
-    # set up a listener to receive the prediction response
-    channel.basic_consume(
-        queue='prediction_response',
-        on_message_callback=on_request
-    )
-
-    # start consuming messages
-    channel.start_consuming()
-
-    # close the connection
-    connection.close()
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=8000)
