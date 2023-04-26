@@ -18,7 +18,7 @@ from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_sc
 import spacy
 
 # Load the dataset
-df = pd.read_csv('health_conditions.csv')
+df = pd.read_csv('medical_data.csv')
 
 # Define a function to create new features
 def create_features(df):
