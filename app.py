@@ -7,7 +7,6 @@ from sklearn.metrics import accuracy_score
 import pickle
 from flask import Flask, request, jsonify
 import pika
-import json
 
 
 import pandas as pd
@@ -42,10 +41,10 @@ def count_adjectives(text):
     return len(adjectives)
 
 # Apply the feature engineering function to the dataset
-df = create_features(df)
+# df = create_features(df)
 
 # Split the dataset into training and testing sets
-X_train, X_test, y_train, y_test = train_test_split(df[['description', 'desc_length', 'unique_words', 'num_adjectives']], df['disease_class'], test_size=0.2, random_state=42)
+X_train, X_test, y_train, y_test = train_test_split(df[['description']], df['class'], test_size=0.2, random_state=42)
 
 # Define the TF-IDF vectorizer
 tfidf = TfidfVectorizer(stop_words='english', max_features=5000)
@@ -54,8 +53,8 @@ tfidf = TfidfVectorizer(stop_words='english', max_features=5000)
 X_train_tfidf = tfidf.fit_transform(X_train['description'])
 
 # Add the additional features to the training data
-X_train_final = pd.concat([pd.DataFrame(X_train_tfidf.toarray()), X_train[['desc_length', 'unique_words', 'num_adjectives']].reset_index(drop=True)], axis=1)
-
+# X_train_final = pd.concat([pd.DataFrame(X_train_tfidf.toarray()), X_train[['desc_length', 'unique_words', 'num_adjectives']].reset_index(drop=True)], axis=1)
+X_train_final =  pd.DataFrame(X_train_tfidf.toarray())
 # Define the random forest classifier
 rfc = RandomForestClassifier()
 
@@ -78,8 +77,8 @@ print("Best hyperparameters: ", grid_search.best_params_)
 X_test_tfidf = tfidf.transform(X_test['description'])
 
 # Add the additional features to the testing data
-X_test_final = pd.concat([pd.DataFrame(X_test_tfidf.toarray()), X_test[['desc_length', 'unique_words', 'num_adjectives']].reset_index(drop=True)], axis=1)
-
+# X_test_final = pd.concat([pd.DataFrame(X_test_tfidf.toarray()), X_test[['desc_length', 'unique_words', 'num_adjectives']].reset_index(drop=True)], axis=1)
+X_test_final = pd.DataFrame(X_test_tfidf.toarray())
 # Predict the disease class using the trained model
 y_pred = grid_search.predict(X_test_final)
 
@@ -103,18 +102,18 @@ def predict():
     input_data = request.json
     
     # Load the trained model
-    with open('rfc_model.pkl', 'rb') as f:
+    with open('trained_model.pkl', 'rb') as f:
         rfc_model = pickle.load(f)
     
     # Transform the input data using TF-IDF
     input_tfidf = tfidf.transform([input_data['description']])
     
     # Create the additional features for the input data
-    input_features = [[len(input_data['description'].split()), len(set(input_data['description'].split())), count_adjectives(input_data['description'])]]
+    # input_features = [[len(input_data['description'].split()), len(set(input_data['description'].split())), count_adjectives(input_data['description'])]]
     
     # Concatenate the TF-IDF and additional features for the input data
-    input_final = pd.concat([pd.DataFrame(input_tfidf.toarray()), pd.DataFrame(input_features, columns=['desc_length', 'unique_words', 'num_adjectives'])], axis=1)
-    
+    # input_final = pd.concat([pd.DataFrame(input_tfidf.toarray()), pd.DataFrame(input_features, columns=['desc_length', 'unique_words', 'num_adjectives'])], axis=1)
+    input_final = pd.DataFrame(input_tfidf.toarray())
     # Predict the disease class using the trained model
     prediction = rfc_model.predict(input_final)
     
