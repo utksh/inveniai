@@ -1,22 +1,38 @@
 version: "3"
 
 services:
+  db:
+    image: postgres:14.1-alpine
+    restart: always
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+    ports:
+      - 5432:5432/tcp
+    volumes: 
+      - db_data:/var/lib/postgresql/data
   rabbitmq:
     image: rabbitmq:3-management
     ports:
-      - "5673:5672"
+      - "5672:5672"
       - "15672:15672"
     environment:
       - RABBITMQ_DEFAULT_USER=user
       - RABBITMQ_DEFAULT_PASS=password
-
   app:
     build: .
     ports:
       - "8000:8000"
     depends_on:
       - rabbitmq
+      - db
     environment:
       - RABBITMQ_HOST=rabbitmq
       - RABBITMQ_USER=user
       - RABBITMQ_PASS=password
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+    network_mode: host
+volumes:
+  db_data:
+    driver: local

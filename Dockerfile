@@ -15,4 +15,4 @@ RUN pip install pandas
 EXPOSE 8000
 
 # Run app.py when the container launches
-CMD ["python", "app.py"]
+CMD ["bash", "-c", "python app.py & python consumer.py"]

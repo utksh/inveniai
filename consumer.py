@@ -4,12 +4,13 @@ import pika
 import requests
 # Connect to the PostgreSQL database
 conn = psycopg2.connect(
-    host="localhost",
-    database="mydatabase",
-    user="myusername",
-    password="mypassword"
+    host="0.0.0.0",
+    database="predictions",
+    user="postgres",
+    password="postgres",
+    port=5432,
 )
-
+print("consuming")
 # Define a cursor object to execute SQL queries
 cur = conn.cursor()
 
@@ -41,7 +42,7 @@ def callback(ch, method, properties, body):
     data = json.loads(body)
 
     # Make an API call for model inference
-    url = 'http://localhost:5000/predict'
+    url = 'http://localhost:8000/predict'
     headers = {'Content-type': 'application/json'}
     response = requests.post(url, headers=headers, json=data)
 
@@ -53,11 +54,12 @@ def callback(ch, method, properties, body):
     cur.execute("""
         INSERT INTO inference_results (patient_description, disease_class, predicted_class, predicted_probability)
         VALUES (%s, %s, %s, %s)
-    """, (data['patient_description'], data['disease_class'], predicted_class, predicted_probability))
+    """, (data['patient_description'], data['class'], predicted_class, predicted_probability))
     conn.commit()
 
 # Start consuming messages from the message queue
-channel.basic_consume(queue='inference_queue', on_message_callback=callback, auto_ack=True)
+channel.basic_consume(queue='inference_queue', on_message_callback=callback, auto_ack=False)
+print("Called callback")
 channel.start_consuming()
 
 # Close the database connection
