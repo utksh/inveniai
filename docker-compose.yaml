@@ -4,23 +4,23 @@ services:
   db:
     image: postgres:14.1-alpine
     restart: always
-    environment:
-      - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=postgres
     ports:
-      - 5432:5432/tcp
+      - 7432:5432/tcp
     volumes: 
       - db_data:/var/lib/postgresql/data
-  rabbitmq:
-    image: rabbitmq:3-management
-    ports:
-      - "5672:5672"
-      - "15672:15672"
+    shm_size: '512m'
     environment:
-      - RABBITMQ_DEFAULT_USER=user
-      - RABBITMQ_DEFAULT_PASS=password
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+      TS_TUNE_MEMORY: 2GB
+      TS_TUNE_NUM_CPUS: 1
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
   app:
-    build: .
+    build: app
     ports:
       - "8000:8000"
     depends_on:
@@ -31,8 +31,32 @@ services:
       - RABBITMQ_USER=user
       - RABBITMQ_PASS=password
       - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=postgres
-    network_mode: host
+      - POSTGRES_PASSWORD=password
+      - POSTGRES_HOST=db
+      - POSTGRES_PORT=5432
+    restart: on-failure:20
+  consumer:
+    build: consumer
+    depends_on:
+      - rabbitmq
+      - db
+      - app
+    environment:
+      - RABBITMQ_HOST=rabbitmq
+      - RABBITMQ_USER=user
+      - RABBITMQ_PASS=password
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=password
+      - POSTGRES_HOST=db
+      - POSTGRES_PORT=5432
+    restart: on-failure:20
+  rabbitmq:
+    image: rabbitmq:3-management
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      - RABBITMQ_DEFAULT_USER=user
+      - RABBITMQ_DEFAULT_PASS=password
 volumes:
-  db_data:
-    driver: local
+  db_data: {}

@@ -1,0 +1,7 @@
+Flask
+scikit-learn
+pandas
+spacy
+requests
+pika
+psycopg2-binary
